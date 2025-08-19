@@ -273,13 +273,13 @@ class TeamlyAPIWrapper(BaseModel, ABC):
 
     @_authorization_wrapper
     def _post(self, url: str, payload: dict) -> dict:
-        resp = requests.post(f"{self.base_url}{url}", json=payload, headers=self._headers(), verify=False)
+        resp = requests.post(f"{self.base_url}{url}", json=payload, headers=self._headers())
         resp.raise_for_status()
         return resp.json()
 
     def _auth_post(self, url: str, payload: dict) -> str:
         # No bearer header during auth flow
-        resp = requests.post(url, json=payload, headers={"Content-Type": "application/json", "Accept": "application/json"}, verify=False)
+        resp = requests.post(url, json=payload, headers={"Content-Type": "application/json", "Accept": "application/json"})
         resp.raise_for_status()
         data = resp.json()
         refresh_token = data.get("refresh_token")

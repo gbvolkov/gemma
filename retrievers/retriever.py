@@ -30,6 +30,31 @@ from retrievers.teamly_retriever import (
 )
 import config
 
+
+from copy import deepcopy
+
+class CrossEncoderRerankerWithScores(CrossEncoderReranker):
+    min_ratio: int = 0
+
+    def __init__(self, *args, min_ratio: float = 0.00, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.min_ratio=min_ratio
+    def compress_documents(self, documents, query, callbacks=None):
+        # compute scores
+        scores = self.model.score([(query, d.page_content) for d in documents])
+        # attach to metadata (without mutating originals)
+        docs = []
+        for d, s in zip(documents, scores):
+            d2 = deepcopy(d)
+            d2.metadata = {**(d2.metadata or {}), "rerank_score": float(s)}
+            docs.append(d2)
+        max_s = max(scores)
+        threshold = self.min_ratio*max_s
+        passed_docs = [d for d in docs if d.metadata["rerank_score"] >= threshold]
+        # sort by score desc and keep top_n
+        passed_docs.sort(key=lambda d: d.metadata["rerank_score"], reverse=True)
+        return passed_docs[: self.top_n]
+
 # Global instances and refreshable Teamly Retriever for hot index updates
 _teamly_retriever_instance: Optional[TeamlyRetriever] = None
 _teamly_retriever_tickets_instance : Optional[TeamlyRetriever_Tickets] = None
@@ -37,12 +62,16 @@ _teamly_retriever_glossary_instance : Optional[TeamlyRetriever_Glossary] = None
 #_teamly_compression_retriever_instance: Optional[TeamlyContextualCompressionRetriever] = None
 
 def load_vectorstore(file_path: str, embedding_model_name: str) -> FAISS:
+    #device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = "cpu"
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"No vectorstore found at {file_path}")
-    embeddings = HuggingFaceEmbeddings(model_name=embedding_model_name)
+    embeddings = HuggingFaceEmbeddings(model_name=embedding_model_name, model_kwargs={"device": device})
     return FAISS.load_local(file_path, embeddings, allow_dangerous_deserialization=True)
 
 def get_retriever_multi():
+    #device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = "cpu"
     notion_vs = load_vectorstore(config.NOTION_INDEX_FOLDER, config.EMBEDDING_MODEL)
     chats_vs = load_vectorstore(config.CHATS_INDEX_FOLDER, config.EMBEDDING_MODEL)
     k = 5
@@ -51,8 +80,8 @@ def get_retriever_multi():
                     chats_vs.as_retriever(search_kwargs={"k": k})],
         weights=[0.5, 0.5]  # adjust to favor text vs. images
     )
-    reranker_model = HuggingFaceCrossEncoder(model_name=config.RERANKING_MODEL)
-    reranker = CrossEncoderReranker(model=reranker_model, top_n=3)
+    reranker_model = HuggingFaceCrossEncoder(model_name=config.RERANKING_MODEL, model_kwargs={"device": device})
+    reranker = CrossEncoderRerankerWithScores(model=reranker_model, top_n=3)
     retriever = ContextualCompressionRetriever(
         base_compressor=reranker, base_retriever=ensemble
     )
@@ -68,13 +97,13 @@ def get_retriever_object_teamly():
     global _teamly_retriever_instance#, _teamly_compression_retriever_instance
     # Initialize Teamly retriever with refresh support
     _teamly_retriever_instance = TeamlyRetriever("./auth.json", k=40)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    # device = "cpu"
+    #device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = "cpu"
     reranker_model = HuggingFaceCrossEncoder(
         model_name=config.RERANKING_MODEL,
         model_kwargs={'trust_remote_code': True, "device": device}
     )
-    reranker = CrossEncoderReranker(model=reranker_model, top_n=MAX_RETRIEVALS)
+    reranker = CrossEncoderRerankerWithScores(model=reranker_model, top_n=MAX_RETRIEVALS, min_ratio=float(config.MIN_RERANKER_RATIO))
     retriever = TeamlyContextualCompressionRetriever(
         base_compressor=reranker, base_retriever=_teamly_retriever_instance
     )
@@ -106,12 +135,13 @@ def get_retriever_object_faiss():
         search_kwargs={"k": MAX_RETRIEVALS},
     )
     multi_retriever.docstore.mset(list(zip(doc_ids, documents)))
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    #device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = "cpu"
     reranker_model = HuggingFaceCrossEncoder(
         model_name=config.RERANKING_MODEL,
         model_kwargs={'trust_remote_code': True, "device": device}
     )
-    reranker = CrossEncoderReranker(model=reranker_model, top_n=MAX_RETRIEVALS)
+    reranker = CrossEncoderRerankerWithScores(model=reranker_model, top_n=MAX_RETRIEVALS)
     retriever = ContextualCompressionRetriever(
         base_compressor=reranker, base_retriever=multi_retriever
     )

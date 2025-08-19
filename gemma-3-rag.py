@@ -1,4 +1,10 @@
 import os
+#os.environ["TRANSFORMERS_VERBOSITY"] = "info"
+
+os.environ["LANGCHAIN_ENDPOINT"]="https://api.smith.langchain.com"
+os.environ["LANGCHAIN_TRACING_V2"] = "true"
+
+
 from pprint import pprint
 
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
@@ -7,10 +13,10 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_huggingface import HuggingFacePipeline, ChatHuggingFace
 
-from retrievers.retriever import get_retriever_object_faiss
+from retrievers.retriever import get_retriever_object_faiss, get_retriever_object_teamly
 
 # 1) Retriever (consider k=3–5 and MMR in your retriever)
-retriever = get_retriever_object_faiss()
+retriever = get_retriever_object_teamly()
 
 # 2) Model + tokenizer + safe generation config
 model_path = "google/gemma-3-270m-it"
@@ -30,12 +36,12 @@ if model.generation_config is not None:
 
 # Two sensible decoding profiles:
 GEN_KWARGS_QA_STRICT = dict(
-    max_new_tokens=160,
+    max_new_tokens=512,
     do_sample=False,          # greedy for factual QA
     temperature=0.0,
 )
 GEN_KWARGS_QA_BALANCED = dict(
-    max_new_tokens=160,
+    max_new_tokens=512,
     do_sample=True,           # a touch of sampling if you want fuller answers
     temperature=0.2,
     top_p=0.9,
@@ -60,14 +66,14 @@ system_prompt = (
     "Use ONLY the given context to answer the question. If the answer is not in the context, say you don't know.\n"
     "Keep the answer concise (<= 8 sentences). If sources (URLs) are shown in context, include the most relevant one.\n"
     "If available return FIRST definition, and only then list.\n"
-    "Answer in the same language as the question.\n\n"
+    "Use Russian language to form your answer.\n\n"
     "Context:\n{context}"
 )
 
 prompt = ChatPromptTemplate.from_messages(
     [
         ("system", system_prompt),
-        ("human", "{input}"),
+        ("human", "Ответь на вопрос пользователя на русском языке: {input}"),
     ]
 )
 
@@ -81,7 +87,7 @@ question_answer_chain = create_stuff_documents_chain(
 chain = create_retrieval_chain(retriever, question_answer_chain)
 
 # 5) Ask
-query = "Как EL влияет на лизинговую заявку?"
+query = "Кто такие key users?"
 result = chain.invoke({"input": query})
 
 # Depending on your LangChain version, output key can be 'answer' or 'output_text'
