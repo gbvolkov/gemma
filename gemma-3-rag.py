@@ -13,12 +13,12 @@ from retrievers.retriever import get_retriever_object_faiss
 retriever = get_retriever_object_faiss()
 
 # 2) Model + tokenizer + safe generation config
-model_path = "/models/gemma-3-270m-it"
+model_path = "google/gemma-3-270m-it"
 tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
 model = AutoModelForCausalLM.from_pretrained(
     model_path,
     torch_dtype="auto",
-    device_map="auto",
+    device_map="cpu",
 )
 
 # Make sure generation stops at EOS and padding is defined
