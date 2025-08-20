@@ -157,7 +157,7 @@ class TeamlyAPIWrapper(BaseModel, ABC):
     # Construction / auth helpers
     # ---------------------------------------------------------------------
 
-    def __init__(self, auth_data_store: str) -> None:
+    def __init__(self, auth_data_store: str, k: int=40) -> None:
         """
         Parameters
         ----------
@@ -185,6 +185,7 @@ class TeamlyAPIWrapper(BaseModel, ABC):
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.auth_code}",
         }
+        self.k = k
 
         self._load_sd_documents()
 

@@ -81,7 +81,7 @@ def get_retriever_multi():
         weights=[0.5, 0.5]  # adjust to favor text vs. images
     )
     reranker_model = HuggingFaceCrossEncoder(model_name=config.RERANKING_MODEL, model_kwargs={"device": device})
-    reranker = CrossEncoderRerankerWithScores(model=reranker_model, top_n=3)
+    reranker = CrossEncoderRerankerWithScores(model=reranker_model, top_n=3, min_ratio=float(config.MIN_RERANKER_RATIO))
     retriever = ContextualCompressionRetriever(
         base_compressor=reranker, base_retriever=ensemble
     )
@@ -96,7 +96,14 @@ def get_retriever_object_teamly():
     MAX_RETRIEVALS = 3
     global _teamly_retriever_instance#, _teamly_compression_retriever_instance
     # Initialize Teamly retriever with refresh support
-    _teamly_retriever_instance = TeamlyRetriever("./auth.json", k=40)
+    _teamly_retriever_instance = TeamlyRetriever("./auth.json", k=5)
+
+    bft_vs = load_vectorstore(config.ASSISTANT_INDEX_FOLDER, config.EMBEDDING_MODEL)
+    ensemble_retriever = EnsembleRetriever(
+        retrievers=[_teamly_retriever_instance, bft_vs.as_retriever(search_kwargs={"k": 5})],
+        weights=[0.6, 0.4]
+    )
+
     #device = "cuda" if torch.cuda.is_available() else "cpu"
     device = "cpu"
     reranker_model = HuggingFaceCrossEncoder(
@@ -105,7 +112,7 @@ def get_retriever_object_teamly():
     )
     reranker = CrossEncoderRerankerWithScores(model=reranker_model, top_n=MAX_RETRIEVALS, min_ratio=float(config.MIN_RERANKER_RATIO))
     retriever = TeamlyContextualCompressionRetriever(
-        base_compressor=reranker, base_retriever=_teamly_retriever_instance
+        base_compressor=reranker, base_retriever=ensemble_retriever
     )
     return retriever
 
@@ -141,48 +148,52 @@ def get_retriever_object_faiss():
         model_name=config.RERANKING_MODEL,
         model_kwargs={'trust_remote_code': True, "device": device}
     )
-    reranker = CrossEncoderRerankerWithScores(model=reranker_model, top_n=MAX_RETRIEVALS)
+    reranker = CrossEncoderRerankerWithScores(model=reranker_model, top_n=MAX_RETRIEVALS, min_ratio=float(config.MIN_RERANKER_RATIO))
     retriever = ContextualCompressionRetriever(
         base_compressor=reranker, base_retriever=multi_retriever
     )
     return retriever
 
-
 def get_retriever_faiss():
+    retriever = get_retriever_object_faiss()
     MAX_RETRIEVALS = 3
-    vector_store_path = config.ASSISTANT_INDEX_FOLDER
-    vectorstore = load_vectorstore(vector_store_path, config.EMBEDDING_MODEL)
-    with open(f'{vector_store_path}/docstore.pkl', 'rb') as file:
-        documents = pickle.load(file)
-    doc_ids = [doc.metadata.get('problem_number', '') for doc in documents]
-    store = InMemoryByteStore()
-    id_key = "problem_number"
-    multi_retriever = MultiVectorRetriever(
-        vectorstore=vectorstore,
-        byte_store=store,
-        id_key=id_key,
-        search_kwargs={"k": MAX_RETRIEVALS},
-    )
-    multi_retriever.docstore.mset(list(zip(doc_ids, documents)))
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    reranker_model = HuggingFaceCrossEncoder(
-        model_name=config.RERANKING_MODEL,
-        model_kwargs={'trust_remote_code': True, "device": device}
-    )
-    reranker = CrossEncoderReranker(model=reranker_model, top_n=MAX_RETRIEVALS)
-    retriever = ContextualCompressionRetriever(
-        base_compressor=reranker, base_retriever=multi_retriever
-    )
     def search(query: str) -> List[Document]:
         result = retriever.invoke(query, search_kwargs={"k": MAX_RETRIEVALS})
         return result
     return search
 
+def get_retriever_object_faiss_chunked():
+    MAX_RETRIEVALS = 3
+    vector_store_path = config.ASSISTANT_INDEX_FOLDER
+    vectorstore = load_vectorstore(vector_store_path, config.EMBEDDING_MODEL)
+    with open(f'{vector_store_path}/docstore.pkl', 'rb') as file:
+        documents = pickle.load(file)
+    #device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = "cpu"
+    reranker_model = HuggingFaceCrossEncoder(
+        model_name=config.RERANKING_MODEL,
+        model_kwargs={'trust_remote_code': True, "device": device}
+    )
+    reranker = CrossEncoderRerankerWithScores(model=reranker_model, top_n=MAX_RETRIEVALS, min_ratio=float(config.MIN_RERANKER_RATIO))
+    retriever = ContextualCompressionRetriever(
+        base_compressor=reranker, base_retriever=vectorstore.as_retriever()
+    )
+    return retriever
+
+def get_retriever_faiss_chunked():
+    retriever = get_retriever_object_faiss_chunked()
+    MAX_RETRIEVALS = 3
+    def search(query: str) -> List[Document]:
+        result = retriever.invoke(query, search_kwargs={"k": MAX_RETRIEVALS})
+        return result
+    return search
+
+
 def get_retriever():
     retriever_type = config.RETRIEVER_TYPE
     if retriever_type == "teamly":
         return get_retriever_teamly()
-    return get_retriever_faiss()
+    return get_retriever_faiss_chunked()
 
 # Initialize the search function with the selected retrieverx
 search = get_retriever()

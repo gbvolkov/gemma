@@ -98,7 +98,7 @@ class TeamlyRetriever_Tickets(HybridTeamlyRetriever):
 
 class TeamlyRetriever(HybridTeamlyRetriever):
     def __init__(self, auth_data_store, **kw):
-        wrapper = TeamlyAPIWrapper_SD_QA(auth_data_store=auth_data_store)
+        wrapper = TeamlyAPIWrapper_SD_QA(auth_data_store=auth_data_store, **kw)
         super().__init__(wrapper, **kw)
     def _get_relevant_documents(self, query: str, *, run_manager, **kw):
         return (

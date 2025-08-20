@@ -67,7 +67,7 @@ def reload_admin_config():
 
 NOTION_INDEX_FOLDER = os.environ.get('NOTION_INDEX_FOLDER') or "./data/notion_idx"
 CHATS_INDEX_FOLDER = os.environ.get('CHATS_INDEX_FOLDER') or "./data/chats_idx"
-ASSISTANT_INDEX_FOLDER = os.environ.get('ASSISTANT_INDEX_FOLDER') or "./data/ass_idx"
+ASSISTANT_INDEX_FOLDER = os.environ.get('ASSISTANT_INDEX_FOLDER') or "./data/bft_index"
 RERANKING_MODEL = os.environ.get('RERANKING_MODEL') or '/models/bge-reranker-large'
 NO_CUDA = os.environ.get('NO_CUDA', "False")
 
