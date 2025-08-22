@@ -22,12 +22,14 @@ from langchain_community.cross_encoders import HuggingFaceCrossEncoder
 from langchain.storage import InMemoryByteStore
 from langchain_core.tools import tool
 from langchain_community.vectorstores import FAISS
+from langchain.retrievers import MergerRetriever
 from retrievers.teamly_retriever import (
     TeamlyRetriever,
     TeamlyRetriever_Tickets,
     TeamlyRetriever_Glossary,
     TeamlyContextualCompressionRetriever
 )
+from retrievers.head_documents_loader import _build_heads_by_source, _dedupe_docs
 import config
 
 
@@ -111,10 +113,9 @@ def get_retriever_object_teamly():
         model_kwargs={'trust_remote_code': True, "device": device}
     )
     reranker = CrossEncoderRerankerWithScores(model=reranker_model, top_n=MAX_RETRIEVALS, min_ratio=float(config.MIN_RERANKER_RATIO))
-    retriever = TeamlyContextualCompressionRetriever(
+    return TeamlyContextualCompressionRetriever(
         base_compressor=reranker, base_retriever=ensemble_retriever
     )
-    return retriever
 
 
 def get_retriever_teamly():
@@ -149,10 +150,9 @@ def get_retriever_object_faiss():
         model_kwargs={'trust_remote_code': True, "device": device}
     )
     reranker = CrossEncoderRerankerWithScores(model=reranker_model, top_n=MAX_RETRIEVALS, min_ratio=float(config.MIN_RERANKER_RATIO))
-    retriever = ContextualCompressionRetriever(
+    return ContextualCompressionRetriever(
         base_compressor=reranker, base_retriever=multi_retriever
     )
-    return retriever
 
 def get_retriever_faiss():
     retriever = get_retriever_object_faiss()
@@ -166,8 +166,12 @@ def get_retriever_object_faiss_chunked():
     MAX_RETRIEVALS = 3
     vector_store_path = config.ASSISTANT_INDEX_FOLDER
     vectorstore = load_vectorstore(vector_store_path, config.EMBEDDING_MODEL)
-    with open(f'{vector_store_path}/docstore.pkl', 'rb') as file:
-        documents = pickle.load(file)
+    
+    # Load docstore once and pre-index "head" docs by source
+    with open(os.path.join(vector_store_path, "docstore.pkl"), "rb") as f:
+        docstore = pickle.load(f)
+    head_store = _build_heads_by_source(docstore)
+
     #device = "cuda" if torch.cuda.is_available() else "cpu"
     device = "cpu"
     reranker_model = HuggingFaceCrossEncoder(
@@ -178,14 +182,26 @@ def get_retriever_object_faiss_chunked():
     retriever = ContextualCompressionRetriever(
         base_compressor=reranker, base_retriever=vectorstore.as_retriever()
     )
-    return retriever
+    return retriever, head_store
 
 def get_retriever_faiss_chunked():
-    retriever = get_retriever_object_faiss_chunked()
+    retriever, head_store = get_retriever_object_faiss_chunked()
     MAX_RETRIEVALS = 3
     def search(query: str) -> List[Document]:
-        result = retriever.invoke(query, search_kwargs={"k": MAX_RETRIEVALS})
-        return result
+        # 1) do the regular retrieval once
+        retrieved = retriever.invoke(query, search_kwargs={"k": MAX_RETRIEVALS})
+        # 2) collect unique sources from retrieved docs
+        sources = {
+            d.metadata.get("source")
+            for d in retrieved
+            if d.metadata and d.metadata.get("source")
+        }
+        if not sources:
+            return retrieved
+        # 3) fetch head docs from the prebuilt index (no vector search)
+        head_docs = [h for s in sources for h in head_store.get(s, [])]
+        # 4) merge + dedupe
+        return _dedupe_docs(retrieved + head_docs)
     return search
 
 

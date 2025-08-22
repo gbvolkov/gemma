@@ -16,8 +16,8 @@ def chunk_documents(docs: List[Document]) -> List[Document]:
     chunked_docs = []
     for doc in docs:
         chunks = chunk_text(doc.page_content)
-        for chunk in chunks:
-            chunked_docs.append(
-                Document(page_content=chunk, metadata=doc.metadata)
-            )
+        chunked_docs.extend(
+            Document(page_content=chunk, metadata=doc.metadata)
+            for chunk in chunks
+        )
     return chunked_docs

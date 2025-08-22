@@ -80,8 +80,8 @@ with gr.Blocks(theme=gr.themes.Monochrome()) as demo:
             "https://em-content.zobj.net/source/twitter/141/parrot_1f99c.png",
         ),
     )
-    input = gr.Textbox(lines=1, label="Chat Message")
-    input.submit(run_agent, [input, chatbot], [chatbot])
+    query = gr.Textbox(lines=1, label="Chat Message")
+    query.submit(run_agent, [query, chatbot], [chatbot])
     chatbot.clear(clear_agent_memory)
 
 if __name__ == "__main__":

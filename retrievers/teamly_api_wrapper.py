@@ -210,13 +210,12 @@ class TeamlyAPIWrapper(BaseModel, ABC):
                 article_df = self.parse_json(doc, space_id, article_id, article_title)
                 df = pd.concat([df, article_df], ignore_index=True)
             self.sd_documents = self.get_documents(df)
+        elif os.path.exists(self.articles_data_path):
+            with open(self.articles_data_path, "r", encoding="utf-8") as f:
+                docs_json = json.load(f)
+            self.sd_documents = [Document(page_content=item["page_content"], metadata=item["metadata"]) for item in docs_json]
         else:
-            if os.path.exists(self.articles_data_path):
-                with open(self.articles_data_path, "r", encoding="utf-8") as f:
-                    docs_json = json.load(f)
-                self.sd_documents = [Document(page_content=item["page_content"], metadata=item["metadata"]) for item in docs_json]
-            else:
-                self.sd_documents = None
+            self.sd_documents = None
 
     def get_documents_from_teamly_search(self, query: str) -> List[Document]:
         """Synchronous retrieval used by most LC components."""

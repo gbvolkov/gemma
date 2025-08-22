@@ -16,6 +16,7 @@ from langchain_huggingface import HuggingFacePipeline, ChatHuggingFace
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt.chat_agent_executor import create_react_agent
 
+
 from langchain_gigachat import GigaChat
 
 from retrievers.retriever import get_search_tool
@@ -29,6 +30,7 @@ search_tools = [
 with open("prompt.txt", "r", encoding="utf-8") as f:
     system_prompt = f.read()    
 
+"""
 llm = GigaChat(
     credentials=config.GIGA_CHAT_AUTH, 
     model="GigaChat-2",
@@ -36,6 +38,10 @@ llm = GigaChat(
     temperature=0,
     frequency_penalty=0,
     scope = config.GIGA_CHAT_SCOPE)
+"""
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(model="gpt-4.1-mini", temperature=0)
 
 memory = MemorySaver()
 agent =  create_react_agent(
